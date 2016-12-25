@@ -7,48 +7,44 @@
 #include <mutex>
 #include <thread>
 #include <future>
+#include <stdlib.h>
+#include <fstream>
+#include "brandes.h"
 
-typedef std::set<int> vertices;
-typedef std::vector<int> neighbours;
-typedef std::map<int, neighbours> edges;
-typedef std::map<int, double> results;
+unsigned int threads_number;
 
-const int threads_number = 5;
-
-void read_graph(vertices &actors, edges &neighbourhood);
-
-void calculate_betweenness_centrality(const vertices &actors, const edges &neighbourhood);
-
-void calculate_betweenness_centrality(const int actor,
-                                      const vertices &actors,
-                                      const edges &neighbourhood,
-                                      results &bc);
-
-void thread_do(std::deque<int> &vertices_to_process,
-               const vertices &actors,
-               const edges &neighbourhood,
-               std::promise<results> &result,
-               std::mutex &mutex);
-
-void update_results(results &bc, results &result);
-
-int main() {
+int main(int argc, char* argv[]) {
     vertices actors;
     edges neighbourhood;
+    results bc;
+
+    threads_number = std::atoi(argv[1]);
+    std::string input_filename(argv[2]);
+    std::string output_filename(argv[3]);
 
     /// Reading graph.
-    read_graph(actors, neighbourhood);
+    read_graph(actors, neighbourhood, input_filename);
 
-    calculate_betweenness_centrality(actors, neighbourhood);
+    calculate_betweenness_centrality(actors, neighbourhood, bc);
+
+    write_results(neighbourhood, bc, output_filename);
 
     return 0;
 }
 
-void calculate_betweenness_centrality(const vertices &actors, const edges &neighbourhood) {
+void write_results(edges &neighbourhood, results &results, std::string &output_filename) {
+    std::ofstream output_file(output_filename);
 
-    results bc;
+    for (auto actor : results) {
+        if (neighbourhood.find(actor.first) != neighbourhood.end()) {
+            std::cout << actor.first << " " << actor.second << std::endl;
+            output_file << actor.first << " " << actor.second << std::endl;
+        }
+    }
+}
+
+void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc) {
     std::mutex mut;
-
 
     std::vector<std::promise<results>> promises(threads_number);
 
@@ -74,16 +70,8 @@ void calculate_betweenness_centrality(const vertices &actors, const edges &neigh
         results result = result_future.get();
 
         update_results(bc, result);
-
         threads[i].join();
     }
-
-    for (auto actor : bc) {
-        if (neighbourhood.find(actor.first) != neighbourhood.end()) {
-            std::cout << actor.first << " " << actor.second << std::endl;
-        }
-    }
-
 }
 
 void update_results(results &bc, results &result) {
@@ -187,10 +175,12 @@ void calculate_betweenness_centrality(const int actor,
     }
 }
 
-void read_graph(vertices &actors, edges &neighbourhood) {
+void read_graph(vertices &actors, edges &neighbourhood, std::string &filename) {
     std::string line;
 
-    while (std::getline(std::cin, line)) {
+    std::ifstream input_file(filename);
+
+    while (std::getline(input_file, line)) {
         std::istringstream iss(line);
         int v;
         int w;
