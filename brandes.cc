@@ -133,7 +133,7 @@ void calculate_betweenness_centrality(const int actor,
         int vertex = queue.front();
         queue.pop_front();
 
-        stack.push(vertex);<< actor.first << " " << actor.second << std::endl;
+        stack.push(vertex);
 
         if (neighbourhood.find(vertex) != neighbourhood.end()) {
             for (auto neighbour : neighbourhood.at(vertex)) {
