@@ -4,11 +4,16 @@
 #include <sstream>
 #include <map>
 #include <stack>
+#include <mutex>
+#include <thread>
+#include <future>
 
 typedef std::set<int> vertices;
 typedef std::vector<int> neighbours;
 typedef std::map<int, neighbours> edges;
 typedef std::map<int, double> results;
+
+const int threads_number = 5;
 
 void read_graph(vertices &actors, edges &neighbourhood);
 
@@ -18,6 +23,14 @@ void calculate_betweenness_centrality(const int actor,
                                       const vertices &actors,
                                       const edges &neighbourhood,
                                       results &bc);
+
+void thread_do(std::deque<int> &vertices_to_process,
+               const vertices &actors,
+               const edges &neighbourhood,
+               std::promise<results> &result,
+               std::mutex &mutex);
+
+void update_results(results &bc, results &result);
 
 int main() {
     vertices actors;
@@ -34,13 +47,35 @@ int main() {
 void calculate_betweenness_centrality(const vertices &actors, const edges &neighbourhood) {
 
     results bc;
+    std::mutex mut;
+
+
+    std::vector<std::promise<results>> promises(threads_number);
+
+    std::vector<std::thread> threads;
+
+    std::deque<int> vertices_to_process(actors.begin(), actors.end());
+
+
+    for (int i = 0; i < threads_number; ++i) {
+        threads.push_back(std::thread(
+                [&vertices_to_process, &actors, &neighbourhood, &promises, i, &mut]
+                {
+                    thread_do(vertices_to_process, actors, neighbourhood, promises[i], mut);
+                }));
+    }
 
     for (auto actor : actors) {
         bc.insert(std::pair<int, int>(actor, 0.0));
     }
 
-    for (auto actor : actors) {
-        calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
+    for (unsigned int i = 0; i < threads.size(); ++i) {
+        std::future<results> result_future = promises.at(i).get_future();
+        results result = result_future.get();
+
+        update_results(bc, result);
+
+        threads[i].join();
     }
 
     for (auto actor : bc) {
@@ -48,6 +83,38 @@ void calculate_betweenness_centrality(const vertices &actors, const edges &neigh
             std::cout << actor.first << " " << actor.second << std::endl;
         }
     }
+
+}
+
+void update_results(results &bc, results &result) {
+    for (auto res : result) {
+        bc.at(res.first) += res.second;
+    }
+}
+
+void thread_do(std::deque<int> &vertices_to_process,
+               const vertices &actors,
+               const edges &neighbourhood,
+               std::promise<results> &result,
+               std::mutex &mutex) {
+    results bc;
+
+    do {
+        int actor;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (vertices_to_process.empty()) {
+                break;
+            }
+            actor = vertices_to_process.front();
+            vertices_to_process.pop_front();
+        }
+
+        calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
+
+    } while (true);
+
+    result.set_value(bc);
 }
 
 void calculate_betweenness_centrality(const int actor,
@@ -68,9 +135,8 @@ void calculate_betweenness_centrality(const int actor,
         delta.insert(std::pair<int, double>(vertice, 0.0));
     }
 
-
-    sigma[actor] = 1;
-    distance[actor] = 0;
+    sigma.at(actor) = 1;
+    distance.at(actor) = 0;
 
     std::deque<int> queue;
     queue.push_back(actor);
@@ -107,12 +173,16 @@ void calculate_betweenness_centrality(const int actor,
 
         if (predecessors.find(w) != predecessors.end()) {
             for (auto v : predecessors.at(w)) {
-                delta[v] += (sigma[v] / sigma[w]) * (1 + delta[w]);
+                delta.at(v) += ((double) sigma.at(v) / sigma.at(w) ) * (1 + delta.at(w));
             }
         }
 
         if (w != actor) {
-            bc[w] += delta[w];
+            if (bc.find(w) == bc.end()) {
+                bc.insert(std::pair<int, int>(w, 0.0));
+            }
+
+             bc.at(w) += delta.at(w);
         }
     }
 }
