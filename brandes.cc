@@ -12,13 +12,11 @@ typedef std::map<int, double> results;
 
 void read_graph(vertices &actors, edges &neighbourhood);
 
-void print_edges(edges &neighbourhoods);
+void calculate_betweenness_centrality(const vertices &actors, const edges &neighbourhood);
 
-void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood);
-
-void calculate_betweenness_centrality(int actor,
-                                      vertices &actors,
-                                      edges &neighbourhood,
+void calculate_betweenness_centrality(const int actor,
+                                      const vertices &actors,
+                                      const edges &neighbourhood,
                                       results &bc);
 
 int main() {
@@ -30,12 +28,10 @@ int main() {
 
     calculate_betweenness_centrality(actors, neighbourhood);
 
-//    print_edges(neighbourhood);
-
     return 0;
 }
 
-void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood) {
+void calculate_betweenness_centrality(const vertices &actors, const edges &neighbourhood) {
 
     results bc;
 
@@ -54,9 +50,9 @@ void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood) {
     }
 }
 
-void calculate_betweenness_centrality(int actor,
-                                      vertices &actors,
-                                      edges &neighbourhood,
+void calculate_betweenness_centrality(const int actor,
+                                      const vertices &actors,
+                                      const edges &neighbourhood,
                                       results &bc) {
     std::stack<int> stack;
 
@@ -111,7 +107,7 @@ void calculate_betweenness_centrality(int actor,
 
         if (predecessors.find(w) != predecessors.end()) {
             for (auto v : predecessors.at(w)) {
-                delta[v] += (sigma[v] / sigma[w])*(1 + delta[w]);
+                delta[v] += (sigma[v] / sigma[w]) * (1 + delta[w]);
             }
         }
 
