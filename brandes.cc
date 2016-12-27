@@ -11,15 +11,17 @@
 #include <fstream>
 #include "brandes.h"
 
-unsigned int threads_number;
+unsigned int additional_threads_number;
 
-int main(int argc, char* argv[]) {
+void single_thread_betweenness_centrality(const vertices &actors, const edges &neighbourhood, results &bc);
+
+int main(int argc, char *argv[]) {
     vertices actors;
     edges neighbourhood;
     results bc;
 
     /// Setting initial conditions.
-    threads_number = std::atoi(argv[1]);
+    additional_threads_number = std::atoi(argv[1]) - 1;
     std::string input_filename(argv[2]);
     std::string output_filename(argv[3]);
 
@@ -27,7 +29,11 @@ int main(int argc, char* argv[]) {
     read_graph(actors, neighbourhood, input_filename);
 
     /// Running algorithm.
-    calculate_betweenness_centrality(actors, neighbourhood, bc);
+    if (additional_threads_number > 0) {
+        multi_threaded_betweenness_centrality(actors, neighbourhood, bc);
+    } else {
+        single_thread_betweenness_centrality(actors, neighbourhood, bc);
+    }
 
     /// Writing results.
     write_results(neighbourhood, bc, output_filename);
@@ -46,17 +52,28 @@ void write_results(edges &neighbourhood, results &results, std::string &output_f
     }
 }
 
-void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc) {
+void single_thread_betweenness_centrality(const vertices &actors, const edges &neighbourhood, results &bc) {
+    /// Initialize results data structure.
+    for (auto actor : actors) {
+        bc.insert(std::pair<int, int>(actor, 0.0));
+    }
+
+    /// Calculates algorithm.
+    for (auto actor : actors) {
+        calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
+    }
+}
+
+void multi_threaded_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc) {
     std::mutex mut;
-    std::vector<std::promise<results>> promises(threads_number);
+    std::vector<std::promise<results>> promises(additional_threads_number);
     std::vector<std::thread> threads;
     std::deque<int> vertices_to_process(actors.begin(), actors.end());
 
     /// Launches additional threads to run algorithm.
-    for (int i = 0; i < threads_number; ++i) {
+    for (int i = 0; i < additional_threads_number; ++i) {
         threads.push_back(std::thread(
-                [&vertices_to_process, &actors, &neighbourhood, &promises, i, &mut]
-                {
+                [&vertices_to_process, &actors, &neighbourhood, &promises, i, &mut] {
                     thread_do(vertices_to_process, actors, neighbourhood, promises[i], mut);
                 }));
     }
@@ -104,7 +121,6 @@ void thread_do(std::deque<int> &vertices_to_process,
         calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
 
     } while (true);
-
     /// Saves results and terminates.
     result.set_value(bc);
 }
@@ -166,7 +182,7 @@ void calculate_betweenness_centrality(const int actor,
 
         if (predecessors.find(w) != predecessors.end()) {
             for (auto v : predecessors.at(w)) {
-                delta.at(v) += ((double) sigma.at(v) / sigma.at(w) ) * (1 + delta.at(w));
+                delta.at(v) += ((double) sigma.at(v) / sigma.at(w)) * (1 + delta.at(w));
             }
         }
 
@@ -175,7 +191,7 @@ void calculate_betweenness_centrality(const int actor,
                 bc.insert(std::pair<int, int>(w, 0.0));
             }
 
-             bc.at(w) += delta.at(w);
+            bc.at(w) += delta.at(w);
         }
     }
 }

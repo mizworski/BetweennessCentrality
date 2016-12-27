@@ -14,7 +14,7 @@ void write_results(edges &neighbourhood, results &results, std::string &output_f
 
 void read_graph(vertices &actors, edges &neighbourhood, std::string &filename);
 
-void calculate_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc);
+void multi_threaded_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc);
 
 void calculate_betweenness_centrality(const int actor,
                                       const vertices &actors,
