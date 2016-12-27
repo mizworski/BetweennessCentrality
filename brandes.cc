@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void write_results(edges &neighbourhood, results &results, std::string &output_filename) {
+void write_results(const edges &neighbourhood, const results &results, const std::string &output_filename) {
     std::ofstream output_file(output_filename);
 
     for (auto actor : results) {
@@ -64,7 +64,7 @@ void single_thread_betweenness_centrality(const vertices &actors, const edges &n
     }
 }
 
-void multi_threaded_betweenness_centrality(vertices &actors, edges &neighbourhood, results &bc) {
+void multi_threaded_betweenness_centrality(const vertices &actors, const edges &neighbourhood, results &bc) {
     std::mutex mut;
     std::vector<std::promise<results>> promises(additional_threads_number);
     std::vector<std::thread> threads;
@@ -196,7 +196,7 @@ void calculate_betweenness_centrality(const int actor,
     }
 }
 
-void read_graph(vertices &actors, edges &neighbourhood, std::string &filename) {
+void read_graph(vertices &actors, edges &neighbourhood, const std::string &filename) {
     std::string line;
 
     std::ifstream input_file(filename);
