@@ -9,6 +9,7 @@
 #include <future>
 #include <stdlib.h>
 #include <fstream>
+#include <algorithm>
 #include "brandes.h"
 
 unsigned int additional_threads_number;
@@ -18,7 +19,6 @@ void single_thread_betweenness_centrality(const vertices &actors, const edges &n
 int main(int argc, char *argv[]) {
     vertices actors;
     edges neighbourhood;
-    results bc;
 
     /// Setting initial conditions.
     additional_threads_number = std::atoi(argv[1]) - 1;
@@ -28,6 +28,7 @@ int main(int argc, char *argv[]) {
     /// Reading graph.
     read_graph(actors, neighbourhood, input_filename);
 
+    results bc(actors.size(), 0.0);
     /// Running algorithm.
     if (additional_threads_number > 0) {
         multi_threaded_betweenness_centrality(actors, neighbourhood, bc);
@@ -36,31 +37,14 @@ int main(int argc, char *argv[]) {
     }
 
     /// Writing results.
-    write_results(neighbourhood, bc, output_filename);
+    write_results(actors, neighbourhood, bc, output_filename);
 
     return 0;
 }
 
-void write_results(const edges &neighbourhood, const results &results, const std::string &output_filename) {
-    std::ofstream output_file(output_filename);
-
-    for (auto actor : results) {
-        /// Writes only if there was edge coming out of vertice.
-        if (neighbourhood.find(actor.first) != neighbourhood.end()) {
-            output_file << actor.first << " " << actor.second << std::endl;
-        }
-    }
-}
-
 void single_thread_betweenness_centrality(const vertices &actors, const edges &neighbourhood, results &bc) {
-    /// Initialize results data structure.
-    for (auto actor : actors) {
-        bc.insert(std::pair<int, int>(actor, 0.0));
-    }
-
-    /// Calculates algorithm.
-    for (auto actor : actors) {
-        calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
+    for (unsigned long i = 0; i < actors.size(); ++i) {
+        calculate_betweenness_centrality(i, actors, neighbourhood, bc);
     }
 }
 
@@ -68,19 +52,13 @@ void multi_threaded_betweenness_centrality(const vertices &actors, const edges &
     std::mutex mut;
     std::vector<std::promise<results>> promises(additional_threads_number);
     std::vector<std::thread> threads;
-    std::deque<int> vertices_to_process(actors.begin(), actors.end());
-
+    unsigned long vertices_to_process = actors.size();
     /// Launches additional threads to run algorithm.
     for (int i = 0; i < additional_threads_number; ++i) {
         threads.push_back(std::thread(
                 [&vertices_to_process, &actors, &neighbourhood, &promises, i, &mut] {
                     thread_do(vertices_to_process, actors, neighbourhood, promises[i], mut);
                 }));
-    }
-
-    /// Initialize data structure with results.
-    for (auto actor : actors) {
-        bc.insert(std::pair<int, int>(actor, 0.0));
     }
 
     /// Waiting for results from each thread.
@@ -94,28 +72,27 @@ void multi_threaded_betweenness_centrality(const vertices &actors, const edges &
 }
 
 void update_results(results &bc, results &result) {
-    for (auto res : result) {
-        bc.at(res.first) += res.second;
+    for (unsigned long i = 0; i < bc.size(); ++i) {
+        bc.at(i) += result.at(i);
     }
 }
 
-void thread_do(std::deque<int> &vertices_to_process,
+void thread_do(unsigned long &vertices_to_process,
                const vertices &actors,
                const edges &neighbourhood,
                std::promise<results> &result,
                std::mutex &mutex) {
-    results bc;
+    results bc(actors.size(), 0.0);
 
     do {
-        int actor;
+        unsigned long actor;
         {
             std::lock_guard<std::mutex> lock(mutex);
-            if (vertices_to_process.empty()) {
+            if (vertices_to_process == 0) {
                 /// No more vertices to process.
                 break;
             }
-            actor = vertices_to_process.front();
-            vertices_to_process.pop_front();
+            actor = --vertices_to_process;
         }
 
         calculate_betweenness_centrality(actor, actors, neighbourhood, bc);
@@ -125,33 +102,26 @@ void thread_do(std::deque<int> &vertices_to_process,
     result.set_value(bc);
 }
 
-void calculate_betweenness_centrality(const int actor,
+void calculate_betweenness_centrality(const unsigned long actor,
                                       const vertices &actors,
                                       const edges &neighbourhood,
                                       results &bc) {
-    std::stack<int> stack;
+    std::stack<unsigned long> stack;
 
-    std::map<int, int> sigma;
-    std::map<int, int> distance;
-    std::map<int, double> delta;
-    std::map<int, std::vector<int>> predecessors;
-
-    /// Initialization of additional structures.
-    for (auto vertice : actors) {
-        sigma.insert(std::pair<int, int>(vertice, 0));
-        distance.insert(std::pair<int, int>(vertice, -1));
-        delta.insert(std::pair<int, double>(vertice, 0.0));
-    }
+    std::vector<int> sigma(actors.size(), 0);
+    std::vector<int> distance(actors.size(), -1);
+    std::vector<double> delta(actors.size(), 0.0);
+    std::vector<std::vector<unsigned long>> predecessors(actors.size());
 
     /// Brandes algorithm for specified vertice.
     sigma.at(actor) = 1;
     distance.at(actor) = 0;
 
-    std::deque<int> queue;
+    std::deque<unsigned long> queue;
     queue.push_back(actor);
 
     while (!queue.empty()) {
-        int vertex = queue.front();
+        unsigned long vertex = queue.front();
         queue.pop_front();
 
         stack.push(vertex);
@@ -166,10 +136,6 @@ void calculate_betweenness_centrality(const int actor,
                 if (distance.at(neighbour) == distance.at(vertex) + 1) {
                     sigma.at(neighbour) += sigma.at(vertex);
 
-                    if (predecessors.find(neighbour) == predecessors.end()) {
-                        predecessors.insert(std::pair<int, std::vector<int>>(neighbour, {}));
-                    }
-
                     predecessors.at(neighbour).push_back(vertex);
                 }
             }
@@ -177,20 +143,14 @@ void calculate_betweenness_centrality(const int actor,
     }
 
     while (!stack.empty()) {
-        int w = stack.top();
+        unsigned long w = stack.top();
         stack.pop();
 
-        if (predecessors.find(w) != predecessors.end()) {
-            for (auto v : predecessors.at(w)) {
-                delta.at(v) += ((double) sigma.at(v) / sigma.at(w)) * (1 + delta.at(w));
-            }
+        for (auto v : predecessors.at(w)) {
+            delta.at(v) += ((double) sigma.at(v) / sigma.at(w)) * (1 + delta.at(w));
         }
 
         if (w != actor) {
-            if (bc.find(w) == bc.end()) {
-                bc.insert(std::pair<int, int>(w, 0.0));
-            }
-
             bc.at(w) += delta.at(w);
         }
     }
@@ -198,25 +158,50 @@ void calculate_betweenness_centrality(const int actor,
 
 void read_graph(vertices &actors, edges &neighbourhood, const std::string &filename) {
     std::string line;
+    unsigned long count = 0;
 
     std::ifstream input_file(filename);
 
     while (std::getline(input_file, line)) {
         std::istringstream iss(line);
-        int v;
-        int w;
+        unsigned long v;
+        unsigned long w;
 
         iss >> v;
         iss >> w;
 
-        actors.insert(v);
-        actors.insert(w);
-
-        if (neighbourhood.find(v) == neighbourhood.end()) {
-            neighbourhood.insert(std::pair<int, neighbours>(v, {}));
+        if (actors.find(v) == actors.end()) {
+            actors.insert(std::pair<unsigned long, unsigned long>(v, count++));
         }
 
-        neighbourhood.at(v).push_back(w);
+        if (actors.find(w) == actors.end()) {
+            actors.insert(std::pair<unsigned long, unsigned long>(w, count++));
+        }
+
+        if (neighbourhood.find(actors.at(v)) == neighbourhood.end()) {
+            neighbourhood.insert(std::pair<int, neighbours>(actors.at(v), {}));
+        }
+
+        neighbourhood.at(actors.at(v)).push_back(actors.at(w));
     }
 
+}
+
+void write_results(const vertices &actors, const edges &neighbourhood, const results &results,
+                   const std::string &output_filename) {
+    std::ofstream output_file(output_filename);
+
+    std::vector<std::pair<unsigned long, double>> sorted_results;
+
+    for (auto actor : actors) {
+        if (neighbourhood.find(actor.second) != neighbourhood.end()) {
+            sorted_results.push_back(std::pair<unsigned long, double>(actor.first, results.at(actor.second)));
+        }
+    }
+
+    std::sort(sorted_results.begin(), sorted_results.end());
+
+    for (auto result : sorted_results) {
+        output_file << result.first << " " << result.second << std::endl;
+    }
 }
